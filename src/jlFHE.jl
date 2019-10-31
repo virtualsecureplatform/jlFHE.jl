@@ -1,5 +1,6 @@
 module jlFHE
 
-greet() = print("Hello World!")
+include("TLWE.jl")
+include("Key.jl")
 
 end # module

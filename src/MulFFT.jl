@@ -1,23 +1,28 @@
-using FFTW
-struct TwistFFTPlan
-    fftplan::FFTW.Plan
-    ifftplan::FFTW.Plan
-    twist::Array{ComplexF64}
-end
-function TwistFFTPlan(N)
-    TwistFFTPlan(FFTW.plan_fft(Float64.(rand(-2^9:2^9,N/2))+im*rand(-2^9:2^9,N/2)),FFTW.plan_ifft(Float64.(rand(-2^9:2^9,N/2))+im*rand(-2^9:2^9,N/2)),TwistGen(N))
-end
-function TwistGen(N::Int32)
-    return [exp(1im*k*pi/N) for k in 1:N/2]
-end
+#Reference https://math.stackexchange.com/questions/1435448/negacyclic-fft-multiplication
 
-function TwistFFT(a::Array{Int32,1},fftplan::FFTW.Plan,twist::Array{ComplexF64})
-    return fftplan((a[1:length(a)/2] + im*a[length(a)/2+1:length(a)]).*twist)
-end
-function TwistIFFT(a::Array{ComplexF64,1},ifftplan::FFTW.Plan,twist::Array{ComplexF64})
-    return ifftplan(a).*conj(twist)
-end
+module MulFFT
+    using FFTW
+    struct TwistFFTPlan
+        fftplan::FFTW.Plan
+        ifftplan::FFTW.Plan
+        twist::Array{ComplexF64,1}
+    end
+    function TwistFFTPlan(N::Int32)
+        TwistFFTPlan(FFTW.plan_fft(Float64.(rand(-2^9:2^9,div(N,2)))+im*rand(-2^9:2^9,div(N,2))),FFTW.plan_ifft(Float64.(rand(-2^9:2^9,div(N,2)))+im*rand(-2^9:2^9,div(N,2))),TwistGen(N))
+    end
+    function TwistGen(N::Int32)
+        return [exp(im*k*pi/N) for k in 0:div(N,2)-1]
+    end
 
-function PolyMul(a::Array{UInt32,1},b::Array{UInt32,1},TwistFFTPlan::TwistFFTPlan)
-    unsigned(round(Int32,TwistIFFT(TwistFFT(a,TwistFFTPlan.fftplan,TwistFFTPlan.twist).*TwistFFT(b,TwistFFTPlan.fftplan,TwistFFTPlan.twist),TwistFFTPlan.ifftplan,TwistFFTPlan.twist)%2^32))
+    function TwistFFT(a::Array{Int32,1},fftplan::FFTW.Plan,twist::Array{Complex{Float64}})
+        return fftplan*(complex.(Float64.(a[1:div(length(a),2)]),Float64.(a[div(length(a),2)+1:length(a)])).* twist)
+    end
+    function TwistIFFT(a::Array{Complex{Float64},1},ifftplan::FFTW.Plan,twist::Array{Complex{Float64}})
+        b = (ifftplan*a).* conj(twist)
+        return append!(real(b),imag(b))
+    end
+
+    function PolyMul(a::Array{Int32,1},b::Array{Int32,1},TwistFFTPlan::TwistFFTPlan)
+        return map(x->UInt32(mod(round(Int64,x),Int64(2)^32)),TwistIFFT(TwistFFT(a,TwistFFTPlan.fftplan,TwistFFTPlan.twist).*TwistFFT(b,TwistFFTPlan.fftplan,TwistFFTPlan.twist),TwistFFTPlan.ifftplan,TwistFFTPlan.twist))
+    end
 end
